@@ -49,7 +49,7 @@ public class DevMailController {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("count", items.size());
         payload.put("messages", items);
-        payload.put("hint", "Embedded SMTP does not deliver to real inboxes. Set app.mail.embedded=false in application-local-secrets.properties for Gmail.");
+        payload.put("hint", "Embedded mode — OTP is not sent to real inboxes. Add Gmail SMTP in application-local-secrets.properties (app.mail.mode=auto) and restart.");
         return ApiResponses.okEntity("DevMail", payload);
     }
 

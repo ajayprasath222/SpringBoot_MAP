@@ -1,6 +1,7 @@
 package com.example.printer_springbe.auth.service;
 
 import com.example.printer_springbe.common.config.AppMailProperties;
+import com.example.printer_springbe.common.config.MailModeResolver;
 import com.example.printer_springbe.common.exception.BusinessException;
 import com.example.printer_springbe.common.response.ResponseCode;
 import org.slf4j.Logger;
@@ -21,31 +22,31 @@ public class OtpMailService {
 
     private final JavaMailSender mailSender;
     private final AppMailProperties mailProperties;
+    private final MailModeResolver mailModeResolver;
     private final String mailHost;
     private final String mailUsername;
     private final String mailPassword;
     private final boolean logOtpInDev;
-    private final boolean embeddedMail;
 
     public OtpMailService(
             JavaMailSender mailSender,
             AppMailProperties mailProperties,
+            MailModeResolver mailModeResolver,
             @Value("${spring.mail.host:}") String mailHost,
             @Value("${spring.mail.username:}") String mailUsername,
             @Value("${spring.mail.password:}") String mailPassword,
-            @Value("${app.auth.log-otp-in-dev:true}") boolean logOtpInDev,
-            @Value("${app.mail.embedded:false}") boolean embeddedMail) {
+            @Value("${app.auth.log-otp-in-dev:true}") boolean logOtpInDev) {
         this.mailSender = mailSender;
         this.mailProperties = mailProperties;
+        this.mailModeResolver = mailModeResolver;
         this.mailHost = mailHost;
         this.mailUsername = mailUsername;
         this.mailPassword = mailPassword;
         this.logOtpInDev = logOtpInDev;
-        this.embeddedMail = embeddedMail;
     }
 
     public void sendOtp(String email, String otp, int expiresInSeconds) {
-        if (logOtpInDev) {
+        if (logOtpInDev && mailModeResolver.isEmbedded()) {
             log.info("OTP for {} (expires in {}s): {}", maskEmail(email), expiresInSeconds, otp);
         }
 
@@ -65,23 +66,30 @@ public class OtpMailService {
 
         try {
             mailSender.send(message);
-            if (embeddedMail) {
-                log.info("OTP email captured for {} — open GET /api/v1/dev/mails to read it (embedded SMTP)", maskEmail(email));
+            if (mailModeResolver.isEmbedded()) {
+                log.info("OTP captured locally for {} — see data.SendOtp.otp or GET /api/v1/dev/mails", maskEmail(email));
             } else {
-                log.info("OTP email sent to {}", maskEmail(email));
+                log.info("OTP email sent via SMTP to {}", maskEmail(email));
             }
         } catch (MailAuthenticationException ex) {
-            log.error("Gmail authentication failed for {}", maskEmail(email), ex);
+            log.error("SMTP authentication failed for {} via {}", maskEmail(email), mailHost, ex);
             throw new BusinessException(
                     ResponseCode.MAIL_DELIVERY_FAILED,
                     HttpStatus.SERVICE_UNAVAILABLE,
                     """
-                    Gmail rejected the password. Use a 16-character App Password from \
-                    https://myaccount.google.com/apppasswords (not your normal Gmail password). \
-                    Set it in application-local-secrets.properties as spring.mail.password=xxxx \
-                    or env GMAIL_APP_PASSWORD."""
+                    SMTP authentication failed. For Gmail use a 16-character App Password from \
+                    https://myaccount.google.com/apppasswords — set spring.mail.password or \
+                    GMAIL_APP_PASSWORD in application-local-secrets.properties."""
             );
         } catch (MailException ex) {
+            if (mailModeResolver.isEmbedded()) {
+                log.warn(
+                        "Embedded SMTP could not capture OTP for {} — OTP is still valid (data.SendOtp.otp): {}",
+                        maskEmail(email),
+                        ex.getMessage()
+                );
+                return;
+            }
             log.error("Failed to send OTP email to {}", maskEmail(email), ex);
             String hint = ex.getMostSpecificCause() != null
                     ? ex.getMostSpecificCause().getMessage()
@@ -95,21 +103,22 @@ public class OtpMailService {
     }
 
     private void assertMailConfigured() {
-        if (embeddedMail) {
+        if (mailModeResolver.isEmbedded()) {
             return;
         }
         if (!StringUtils.hasText(mailHost)) {
             throw new BusinessException(
                     ResponseCode.MAIL_NOT_CONFIGURED,
                     HttpStatus.SERVICE_UNAVAILABLE,
-                    "spring.mail.host is not set"
+                    "spring.mail.host is not set. Configure SMTP in application-local-secrets.properties"
             );
         }
         if (!StringUtils.hasText(mailUsername) || !StringUtils.hasText(mailPassword)) {
             throw new BusinessException(
                     ResponseCode.MAIL_NOT_CONFIGURED,
                     HttpStatus.SERVICE_UNAVAILABLE,
-                    "Gmail App Password missing. Set GMAIL_APP_PASSWORD env var or spring.mail.password in application-local-secrets.properties"
+                    "SMTP credentials missing. Set spring.mail.username and spring.mail.password "
+                            + "(or GMAIL_APP_PASSWORD) in application-local-secrets.properties"
             );
         }
     }

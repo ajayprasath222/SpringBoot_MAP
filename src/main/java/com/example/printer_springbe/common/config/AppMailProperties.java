@@ -7,9 +7,23 @@ import org.springframework.util.StringUtils;
 public class AppMailProperties {
 
     /**
+     * Mail delivery: auto (default), embedded, or smtp.
+     * auto — SMTP when spring.mail.* credentials are set; otherwise embedded.
+     */
+    private String mode = MailModeResolver.MODE_AUTO;
+
+    /**
      * Sender address (From header). Should match a verified sender in your SMTP provider.
      */
     private String from = "";
+
+    public String getMode() {
+        return mode;
+    }
+
+    public void setMode(String mode) {
+        this.mode = mode;
+    }
 
     public String getFrom() {
         return from;

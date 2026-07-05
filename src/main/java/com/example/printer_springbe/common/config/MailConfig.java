@@ -14,22 +14,19 @@ public class MailConfig {
     private static final Logger log = LoggerFactory.getLogger(MailConfig.class);
 
     private final AppMailProperties mailProperties;
+    private final MailModeResolver mailModeResolver;
     private final String mailHost;
     private final String mailUsername;
-    private final String mailPassword;
-    private final boolean embeddedMail;
 
     public MailConfig(
             AppMailProperties mailProperties,
+            MailModeResolver mailModeResolver,
             @Value("${spring.mail.host:}") String mailHost,
-            @Value("${spring.mail.username:}") String mailUsername,
-            @Value("${spring.mail.password:}") String mailPassword,
-            @Value("${app.mail.embedded:false}") boolean embeddedMail) {
+            @Value("${spring.mail.username:}") String mailUsername) {
         this.mailProperties = mailProperties;
+        this.mailModeResolver = mailModeResolver;
         this.mailHost = mailHost;
         this.mailUsername = mailUsername;
-        this.mailPassword = mailPassword;
-        this.embeddedMail = embeddedMail;
     }
 
     @PostConstruct
@@ -38,18 +35,11 @@ public class MailConfig {
             mailProperties.setFrom(mailUsername);
         }
 
-        if (embeddedMail) {
-            log.info("Mail mode: EMBEDDED (127.0.0.1). View OTP at GET /api/v1/dev/mails or in console logs.");
+        if (mailModeResolver.isEmbedded()) {
+            log.info("Mail delivery: EMBEDDED (no real SMTP credentials detected)");
             return;
         }
 
-        if (!StringUtils.hasText(mailHost) || !StringUtils.hasText(mailUsername) || !StringUtils.hasText(mailPassword)) {
-            log.warn("""
-                    Mail mode: SMTP but credentials are missing. Add application-local-secrets.properties
-                    (see application-local-secrets.properties.example) or set MAIL_USERNAME / MAIL_PASSWORD.
-                    """);
-            return;
-        }
-        log.info("Mail mode: SMTP — host={}, from={}", mailHost, mailProperties.getFrom());
+        log.info("Mail delivery: SMTP — host={}, from={}", mailHost, mailProperties.getFrom());
     }
 }

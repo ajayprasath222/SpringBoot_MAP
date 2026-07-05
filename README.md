@@ -43,7 +43,15 @@ app.mail.embedded=true
 For Gmail SMTP, set `app.mail.embedded=false` and Gmail App Password.  
 See [EMAIL_SETUP.md](EMAIL_SETUP.md) if App Passwords are unavailable (use Brevo).
 
-### 4. Database credentials (optional)
+### 4. Database credentials (required for postgres profile)
+
+Edit `src/main/resources/application-local-secrets.properties`:
+
+```properties
+POSTGRES_LOCAL_PASSWORD=your-postgres-password-here
+```
+
+Or set environment variable `DB_PASSWORD`.
 
 Defaults in `application-postgres.properties`:
 
@@ -51,7 +59,7 @@ Defaults in `application-postgres.properties`:
 |----------|---------|
 | `DB_URL` | `jdbc:postgresql://localhost:5432/mobile_pdb` |
 | `DB_USERNAME` | `postgres` |
-| `DB_PASSWORD` | *(set in env or secrets)* |
+| `DB_PASSWORD` / `POSTGRES_LOCAL_PASSWORD` | *(required — set in secrets or env)* |
 
 ### 5. Run
 
