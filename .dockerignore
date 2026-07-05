@@ -1,0 +1,13 @@
+target/
+.git/
+.idea/
+*.iml
+uploads/
+src/main/resources/application-local-secrets.properties
+.env
+.env.*
+!/.env.example
+SpringBoot_MAP/
+README.md
+EMAIL_SETUP.md
+HELP.md
