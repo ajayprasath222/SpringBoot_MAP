@@ -50,18 +50,20 @@ No manual JDBC URL needed — the `railway` profile maps these automatically.
 
 ## 5. Set environment variables
 
-In the **app service** → **Variables**, add:
+In the **app service** → **Variables**, add these **required** variables:
 
 | Variable | Value |
 |----------|-------|
 | `SPRING_PROFILES_ACTIVE` | `prod,postgres,railway` |
-| `JWT_SECRET` | Random string, **min 32 characters** |
+| `JWT_SECRET` | Random string, **min 32 characters** (app will not start without this) |
 | `MAIL_HOST` | `smtp.gmail.com` |
 | `MAIL_PORT` | `587` |
 | `MAIL_USERNAME` | `golane360@gmail.com` |
 | `MAIL_PASSWORD` | Your Gmail **App Password** (16 chars) |
 | `MAIL_FROM` | `golane360@gmail.com` |
 | `JPA_DDL_AUTO` | `update` |
+
+**PostgreSQL (critical):** In Variables → **Add Reference** → select PostgreSQL → add **`DATABASE_URL`**. Without this, healthcheck fails.
 
 `PORT` is set automatically by Railway — do not override it.
 
@@ -136,11 +138,12 @@ Example endpoints:
 
 | Problem | Fix |
 |---------|-----|
+| **Healthcheck failure** | Set `JWT_SECRET` (32+ chars). Link PostgreSQL → add `DATABASE_URL` reference to app service |
 | Build fails | Check **Deployments** logs; ensure Root Directory is `SpringBoot_MAP` |
-| DB connection error | Confirm PostgreSQL plugin is added; `SPRING_PROFILES_ACTIVE` includes `railway` |
+| DB connection error | PostgreSQL plugin added + `DATABASE_URL` or `PGHOST` linked to app service |
 | OTP not received | Verify `MAIL_*` vars; use Gmail App Password, not normal password |
-| 502 / app crash | Check logs; ensure `JWT_SECRET` is set (min 32 chars) |
-| Health check fails | Wait 2–3 min after first deploy for DB + app startup |
+| 502 / app crash | Check deploy logs for `JWT_SECRET` or `Railway PostgreSQL is not configured` |
+| Health check fails | Wait 2–3 min; open **Deploy logs** and fix the first ERROR line |
 
 ### View logs
 

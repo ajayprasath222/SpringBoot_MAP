@@ -21,10 +21,13 @@ public class JwtTokenService {
     private final long accessTokenTtlSeconds;
 
     public JwtTokenService(
-            @Value("${app.auth.jwt.secret}") String secret,
+            @Value("${app.auth.jwt.secret:}") String secret,
             @Value("${app.auth.jwt.access-token-ttl-seconds:86400}") long accessTokenTtlSeconds) {
-        if (secret == null || secret.length() < 32) {
-            throw new IllegalStateException("app.auth.jwt.secret must be at least 32 characters");
+        if (secret == null || secret.isBlank() || secret.length() < 32
+                || secret.contains("${")) {
+            throw new IllegalStateException(
+                    "JWT_SECRET is missing or too short (min 32 chars). "
+                            + "Set JWT_SECRET in Railway Variables before deploying.");
         }
         this.secretKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.accessTokenTtlSeconds = accessTokenTtlSeconds;
