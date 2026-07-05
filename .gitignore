@@ -1,5 +1,6 @@
 HELP.md
 target/
+SpringBoot_MAP/
 src/main/resources/application-local-secrets.properties
 uploads/
 .env
