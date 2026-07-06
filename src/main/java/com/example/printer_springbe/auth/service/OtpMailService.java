@@ -1,7 +1,7 @@
 package com.example.printer_springbe.auth.service;
 
 import com.example.printer_springbe.common.config.AppMailProperties;
-import com.example.printer_springbe.common.config.MailModeResolver;
+import com.example.printer_springbe.common.config.MailChannelResolver;
 import com.example.printer_springbe.common.exception.BusinessException;
 import com.example.printer_springbe.common.response.ResponseCode;
 import org.slf4j.Logger;
@@ -21,8 +21,9 @@ public class OtpMailService {
     private static final Logger log = LoggerFactory.getLogger(OtpMailService.class);
 
     private final JavaMailSender mailSender;
+    private final BrevoApiMailSender brevoApiMailSender;
     private final AppMailProperties mailProperties;
-    private final MailModeResolver mailModeResolver;
+    private final MailChannelResolver mailChannelResolver;
     private final String mailHost;
     private final String mailUsername;
     private final String mailPassword;
@@ -30,15 +31,17 @@ public class OtpMailService {
 
     public OtpMailService(
             JavaMailSender mailSender,
+            BrevoApiMailSender brevoApiMailSender,
             AppMailProperties mailProperties,
-            MailModeResolver mailModeResolver,
+            MailChannelResolver mailChannelResolver,
             @Value("${spring.mail.host:}") String mailHost,
             @Value("${spring.mail.username:}") String mailUsername,
             @Value("${spring.mail.password:}") String mailPassword,
             @Value("${app.auth.log-otp-in-dev:true}") boolean logOtpInDev) {
         this.mailSender = mailSender;
+        this.brevoApiMailSender = brevoApiMailSender;
         this.mailProperties = mailProperties;
-        this.mailModeResolver = mailModeResolver;
+        this.mailChannelResolver = mailChannelResolver;
         this.mailHost = mailHost;
         this.mailUsername = mailUsername;
         this.mailPassword = mailPassword;
@@ -46,95 +49,71 @@ public class OtpMailService {
     }
 
     public void sendOtp(String email, String otp, int expiresInSeconds) {
-        if (logOtpInDev && mailModeResolver.isEmbedded()) {
+        if (logOtpInDev && mailChannelResolver.isEmbedded()) {
             log.info("OTP for {} (expires in {}s): {}", maskEmail(email), expiresInSeconds, otp);
         }
 
-        assertMailConfigured();
-
-        String from = resolveFromAddress();
-        SimpleMailMessage message = new SimpleMailMessage();
-        message.setFrom(from);
-        message.setTo(email);
-        message.setSubject("Your verification code");
-        message.setText("""
+        String subject = "Your verification code";
+        String text = """
                 Your one-time verification code is: %s
 
                 This code expires in %d minutes.
                 If you did not request this, you can ignore this email.
-                """.formatted(otp, Math.max(1, expiresInSeconds / 60)));
+                """.formatted(otp, Math.max(1, expiresInSeconds / 60));
 
-        try {
-            mailSender.send(message);
-            if (mailModeResolver.isEmbedded()) {
-                log.info("OTP captured locally for {} — see data.SendOtp.otp or GET /api/v1/dev/mails", maskEmail(email));
-            } else {
-                log.info("OTP email sent via SMTP to {}", maskEmail(email));
-            }
-        } catch (MailAuthenticationException ex) {
-            log.error("SMTP authentication failed for {} via {}", maskEmail(email), mailHost, ex);
-            throw new BusinessException(
-                    ResponseCode.MAIL_DELIVERY_FAILED,
-                    HttpStatus.SERVICE_UNAVAILABLE,
-                    """
-                    SMTP authentication failed. For Gmail use a 16-character App Password from \
-                    https://myaccount.google.com/apppasswords — set spring.mail.password or \
-                    GMAIL_APP_PASSWORD in application-local-secrets.properties."""
-            );
-        } catch (MailException ex) {
-            if (mailModeResolver.isEmbedded()) {
-                log.warn(
-                        "Embedded SMTP could not capture OTP for {} — OTP is still valid (data.SendOtp.otp): {}",
-                        maskEmail(email),
-                        ex.getMessage()
-                );
-                return;
-            }
-            log.error("Failed to send OTP email to {}", maskEmail(email), ex);
-            String hint = ex.getMostSpecificCause() != null
-                    ? ex.getMostSpecificCause().getMessage()
-                    : ex.getMessage();
-            throw new BusinessException(
-                    ResponseCode.MAIL_DELIVERY_FAILED,
-                    HttpStatus.SERVICE_UNAVAILABLE,
-                    "Could not send OTP email: " + hint
-            );
-        }
-    }
-
-    private void assertMailConfigured() {
-        if (mailModeResolver.isEmbedded()) {
+        if (mailChannelResolver.isBrevoApi()) {
+            brevoApiMailSender.send(email, subject, text);
             return;
         }
-        if (!StringUtils.hasText(mailHost)) {
-            throw new BusinessException(
-                    ResponseCode.MAIL_NOT_CONFIGURED,
-                    HttpStatus.SERVICE_UNAVAILABLE,
-                    "spring.mail.host is not set. Configure SMTP in application-local-secrets.properties"
-            );
+        if (mailChannelResolver.isEmbedded()) {
+            sendViaEmbeddedSmtp(email, subject, text);
+            return;
         }
-        if (!StringUtils.hasText(mailUsername) || !StringUtils.hasText(mailPassword)) {
-            throw new BusinessException(
-                    ResponseCode.MAIL_NOT_CONFIGURED,
-                    HttpStatus.SERVICE_UNAVAILABLE,
-                    "SMTP credentials missing. Set spring.mail.username and spring.mail.password "
-                            + "(or GMAIL_APP_PASSWORD) in application-local-secrets.properties"
-            );
+        sendViaSmtp(email, subject, text);
+    }
+
+    private void sendViaEmbeddedSmtp(String email, String subject, String text) {
+        try {
+            mailSender.send(buildMessage(email, subject, text));
+            log.info("OTP captured locally for {}", maskEmail(email));
+        } catch (MailException ex) {
+            log.warn("Embedded SMTP failed for {}: {}", maskEmail(email), ex.getMessage());
         }
     }
 
-    private String resolveFromAddress() {
-        if (mailProperties.isFromConfigured()) {
-            return mailProperties.getFrom();
+    private void sendViaSmtp(String email, String subject, String text) {
+        assertSmtpConfigured();
+        try {
+            mailSender.send(buildMessage(email, subject, text));
+            log.info("OTP sent via SMTP to {}", maskEmail(email));
+        } catch (MailAuthenticationException ex) {
+            throw new BusinessException(ResponseCode.MAIL_DELIVERY_FAILED, HttpStatus.SERVICE_UNAVAILABLE,
+                    "SMTP auth failed. On Railway use BREVO_API_KEY instead of Gmail SMTP.");
+        } catch (MailException ex) {
+            String hint = ex.getMostSpecificCause() != null ? ex.getMostSpecificCause().getMessage() : ex.getMessage();
+            throw new BusinessException(ResponseCode.MAIL_DELIVERY_FAILED, HttpStatus.SERVICE_UNAVAILABLE,
+                    "SMTP blocked on Railway. Set BREVO_API_KEY and MAIL_FROM in Railway Variables. " + hint);
         }
-        return mailUsername;
+    }
+
+    private SimpleMailMessage buildMessage(String email, String subject, String text) {
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(mailProperties.isFromConfigured() ? mailProperties.getFrom() : mailUsername);
+        message.setTo(email);
+        message.setSubject(subject);
+        message.setText(text);
+        return message;
+    }
+
+    private void assertSmtpConfigured() {
+        if (!StringUtils.hasText(mailHost) || !StringUtils.hasText(mailUsername) || !StringUtils.hasText(mailPassword)) {
+            throw new BusinessException(ResponseCode.MAIL_NOT_CONFIGURED, HttpStatus.SERVICE_UNAVAILABLE,
+                    "SMTP not configured. On Railway set BREVO_API_KEY and MAIL_FROM.");
+        }
     }
 
     private static String maskEmail(String email) {
         int at = email.indexOf('@');
-        if (at <= 1) {
-            return "***";
-        }
-        return email.charAt(0) + "***" + email.substring(at);
+        return at <= 1 ? "***" : email.charAt(0) + "***" + email.substring(at);
     }
 }

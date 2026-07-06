@@ -13,49 +13,51 @@ public class MailStartupValidator {
 
     private static final Logger log = LoggerFactory.getLogger(MailStartupValidator.class);
 
-    private final MailModeResolver mailModeResolver;
+    private final MailChannelResolver mailChannelResolver;
     private final String mailHost;
+    private final String mailPort;
+    private final String mailFrom;
     private final String mailUsername;
-    private final String mailPassword;
 
     public MailStartupValidator(
-            MailModeResolver mailModeResolver,
+            MailChannelResolver mailChannelResolver,
             @Value("${spring.mail.host:}") String mailHost,
-            @Value("${spring.mail.username:}") String mailUsername,
-            @Value("${spring.mail.password:}") String mailPassword) {
-        this.mailModeResolver = mailModeResolver;
+            @Value("${spring.mail.port:}") String mailPort,
+            @Value("${app.mail.from:}") String mailFrom,
+            @Value("${spring.mail.username:}") String mailUsername) {
+        this.mailChannelResolver = mailChannelResolver;
         this.mailHost = mailHost;
+        this.mailPort = mailPort;
+        this.mailFrom = mailFrom;
         this.mailUsername = mailUsername;
-        this.mailPassword = mailPassword;
     }
 
     @EventListener(ApplicationReadyEvent.class)
     void validate(ApplicationReadyEvent event) {
-        if (mailModeResolver.isEmbedded()) {
-            log.info("""
-                    
-                    Mail mode: EMBEDDED (auto — no SMTP credentials in secrets).
-                    OTP is NOT sent to your real Gmail inbox.
-                    Get OTP from: data.SendOtp.otp in send-otp response, console log, or GET /api/v1/dev/mails
-                    
-                    To send to real inbox, add Gmail/Brevo SMTP in application-local-secrets.properties
-                    (see application-local-secrets.properties.example) and restart.
-                    """);
+        if (mailChannelResolver.isEmbedded()) {
+            log.info("Mail: EMBEDDED (local dev)");
             return;
         }
-
-        if (!StringUtils.hasText(mailPassword)) {
+        if (mailChannelResolver.isBrevoApi()) {
+            log.info("Mail: BREVO_API");
+            return;
+        }
+        if (!StringUtils.hasText(mailUsername)) {
             log.error("""
                     
-                    ========== SMTP PASSWORD NOT SET ==========
-                    app.mail.mode=smtp but spring.mail.password is missing.
-                    Set spring.mail.password or GMAIL_APP_PASSWORD in application-local-secrets.properties
-                    ============================================
+                    ========== SMTP NOT CONFIGURED ==========
+                    Set in Railway Variables:
+                      MAIL_HOST=smtp.gmail.com
+                      MAIL_PORT=465
+                      MAIL_SSL_ENABLE=true
+                      MAIL_USERNAME=your@gmail.com
+                      MAIL_PASSWORD=your-gmail-app-password
+                      MAIL_FROM=your@gmail.com
+                    =========================================
                     """);
             return;
         }
-
-        log.info("Mail mode: SMTP — OTP will be delivered to the recipient inbox via {}", mailHost);
-        log.info("SMTP user: {}", mailUsername);
+        log.info("Mail: SMTP via {}:{} — from {}", mailHost, mailPort, mailFrom);
+        log.info("Note: Railway may block SMTP. If OTP times out, deploy on a VPS or use port 465.");
     }
 }
