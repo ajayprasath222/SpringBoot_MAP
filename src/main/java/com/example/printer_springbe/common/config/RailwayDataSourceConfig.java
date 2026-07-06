@@ -15,10 +15,6 @@ import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 
-/**
- * Railway provides either {@code DATABASE_URL} or {@code PGHOST}/{@code PGPORT}/… variables.
- * This config supports both so the app can start after linking the PostgreSQL plugin.
- */
 @Configuration
 @Profile("railway")
 public class RailwayDataSourceConfig {
@@ -42,8 +38,9 @@ public class RailwayDataSourceConfig {
 
         if (StringUtils.hasText(host) && StringUtils.hasText(database)) {
             log.info("Railway database: using PGHOST ({})", host);
+            String sslMode = host.contains("railway.internal") ? "disable" : "require";
             HikariDataSource dataSource = new HikariDataSource();
-            dataSource.setJdbcUrl("jdbc:postgresql://" + host + ":" + port + "/" + database + "?sslmode=require");
+            dataSource.setJdbcUrl("jdbc:postgresql://" + host + ":" + port + "/" + database + "?sslmode=" + sslMode);
             dataSource.setUsername(username);
             dataSource.setPassword(password);
             dataSource.setDriverClassName("org.postgresql.Driver");
@@ -52,11 +49,8 @@ public class RailwayDataSourceConfig {
             return dataSource;
         }
 
-        throw new IllegalStateException("""
-                Railway PostgreSQL is not configured.
-                In Railway: add a PostgreSQL database and link it to this service,
-                or set DATABASE_URL / PGHOST variables.
-                """);
+        throw new IllegalStateException(
+                "Railway PostgreSQL not linked. Add DATABASE_URL reference from PostgreSQL service.");
     }
 
     static HikariDataSource buildFromDatabaseUrl(String databaseUrl) {
@@ -67,14 +61,16 @@ public class RailwayDataSourceConfig {
         String password = null;
         if (uri.getUserInfo() != null) {
             String[] parts = uri.getUserInfo().split(":", 2);
-            username = decode(parts[0]);
+            username = URLDecoder.decode(parts[0], StandardCharsets.UTF_8);
             if (parts.length > 1) {
-                password = decode(parts[1]);
+                password = URLDecoder.decode(parts[1], StandardCharsets.UTF_8);
             }
         }
 
         int port = uri.getPort() > 0 ? uri.getPort() : 5432;
-        String jdbcUrl = "jdbc:postgresql://" + uri.getHost() + ":" + port + uri.getPath() + "?sslmode=require";
+        String host = uri.getHost();
+        String sslMode = host != null && host.contains("railway.internal") ? "disable" : "require";
+        String jdbcUrl = "jdbc:postgresql://" + host + ":" + port + uri.getPath() + "?sslmode=" + sslMode;
 
         HikariDataSource dataSource = new HikariDataSource();
         dataSource.setJdbcUrl(jdbcUrl);
@@ -84,9 +80,5 @@ public class RailwayDataSourceConfig {
         dataSource.setConnectionTimeout(60_000);
         dataSource.setInitializationFailTimeout(60_000);
         return dataSource;
-    }
-
-    private static String decode(String value) {
-        return URLDecoder.decode(value, StandardCharsets.UTF_8);
     }
 }
