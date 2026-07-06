@@ -14,7 +14,7 @@ import com.example.printer_springbe.auth.repository.UserRepository;
 import com.example.printer_springbe.auth.util.EmailNormalizer;
 import com.example.printer_springbe.auth.util.SecureTokenHasher;
 import com.example.printer_springbe.common.exception.BusinessException;
-import com.example.printer_springbe.common.config.MailModeResolver;
+import com.example.printer_springbe.common.mail.OtpEmailDelivery;
 import com.example.printer_springbe.common.response.ResponseCode;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -40,7 +40,6 @@ public class RegistrationService {
     private final int otpResendCooldownSeconds;
     private final int maxOtpAttempts;
     private final int registrationTokenTtlSeconds;
-    private final MailModeResolver mailModeResolver;
     private final boolean exposeOtpInResponse;
 
     public RegistrationService(
@@ -50,7 +49,6 @@ public class RegistrationService {
             OtpGenerator otpGenerator,
             OtpMailService otpMailService,
             JwtTokenService jwtTokenService,
-            MailModeResolver mailModeResolver,
             @Value("${app.auth.otp.ttl-seconds:300}") int otpTtlSeconds,
             @Value("${app.auth.otp.resend-cooldown-seconds:60}") int otpResendCooldownSeconds,
             @Value("${app.auth.otp.max-attempts:5}") int maxOtpAttempts,
@@ -66,7 +64,6 @@ public class RegistrationService {
         this.otpResendCooldownSeconds = otpResendCooldownSeconds;
         this.maxOtpAttempts = maxOtpAttempts;
         this.registrationTokenTtlSeconds = registrationTokenTtlSeconds;
-        this.mailModeResolver = mailModeResolver;
         this.exposeOtpInResponse = exposeOtpInResponse;
     }
 
@@ -97,16 +94,16 @@ public class RegistrationService {
         otpSessionRepository.save(session);
         otpMailService.sendOtp(email, otp, otpTtlSeconds);
 
-        boolean embedded = mailModeResolver.isEmbedded();
+        boolean embedded = otpMailService.delivery() == OtpEmailDelivery.EMBEDDED;
         boolean includeOtpInResponse = exposeOtpInResponse && embedded;
         return new SendOtpResponse(
                 email,
                 otpTtlSeconds,
                 otpResendCooldownSeconds,
                 embedded
-                        ? "OTP generated for local dev — use data.SendOtp.otp (not sent to your real inbox)"
+                        ? "OTP generated for local dev — use data.SendOtp.otp"
                         : "OTP sent to your email inbox",
-                embedded ? "EMBEDDED" : "SMTP",
+                embedded ? "EMBEDDED" : "BREVO",
                 embedded ? "/api/v1/dev/mails" : null,
                 includeOtpInResponse ? otp : null
         );

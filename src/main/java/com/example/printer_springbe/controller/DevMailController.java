@@ -49,7 +49,7 @@ public class DevMailController {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("count", items.size());
         payload.put("messages", items);
-        payload.put("hint", "Embedded mode — OTP is not sent to real inboxes. Add Gmail SMTP in application-local-secrets.properties (app.mail.mode=auto) and restart.");
+        payload.put("hint", "Embedded mode — OTP is not sent to real inboxes. Set brevo.api-key and app.mail.delivery=brevo in application-local-secrets.properties to test real delivery.");
         return ApiResponses.okEntity("DevMail", payload);
     }
 
