@@ -2,6 +2,7 @@ package com.example.printer_springbe.auth.web;
 
 import com.example.printer_springbe.auth.constant.AuthConstants;
 import com.example.printer_springbe.auth.model.AuthenticatedUser;
+import com.example.printer_springbe.auth.repository.RevokedTokenRepository;
 import com.example.printer_springbe.auth.service.JwtTokenService;
 import com.example.printer_springbe.common.exception.BusinessException;
 import com.example.printer_springbe.common.response.ResponseCode;
@@ -17,14 +18,21 @@ import org.springframework.web.servlet.HandlerInterceptor;
 @Component
 public class JwtAuthInterceptor implements HandlerInterceptor {
 
-    private final JwtTokenService jwtTokenService;
+    private static final String LOGOUT_PATH = "/api/v1/auth/logout";
 
-    public JwtAuthInterceptor(JwtTokenService jwtTokenService) {
+    private final JwtTokenService jwtTokenService;
+    private final RevokedTokenRepository revokedTokenRepository;
+
+    public JwtAuthInterceptor(
+            JwtTokenService jwtTokenService,
+            RevokedTokenRepository revokedTokenRepository) {
         this.jwtTokenService = jwtTokenService;
+        this.revokedTokenRepository = revokedTokenRepository;
     }
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+        boolean logoutRequest = isLogoutRequest(request);
         String header = request.getHeader(AuthConstants.AUTHORIZATION_HEADER);
 
         if (!StringUtils.hasText(header)) {
@@ -54,10 +62,23 @@ public class JwtAuthInterceptor implements HandlerInterceptor {
 
         try {
             AuthenticatedUser user = jwtTokenService.parseAccessToken(token);
+            if (!logoutRequest && revokedTokenRepository.existsByJti(user.jti())) {
+                throw new BusinessException(
+                        ResponseCode.UNAUTHENTICATED,
+                        HttpStatus.UNAUTHORIZED,
+                        "Access token has been revoked. Please login again"
+                );
+            }
             request.setAttribute(AuthConstants.AUTH_USER_REQUEST_ATTR, user);
             return true;
         } catch (ExpiredJwtException ex) {
+            if (logoutRequest) {
+                // Allow logout to complete idempotently for already-expired tokens.
+                return true;
+            }
             throw new BusinessException(ResponseCode.TOKEN_EXPIRED, HttpStatus.UNAUTHORIZED);
+        } catch (BusinessException ex) {
+            throw ex;
         } catch (JwtException ex) {
             throw new BusinessException(
                     ResponseCode.UNAUTHENTICATED,
@@ -65,5 +86,17 @@ public class JwtAuthInterceptor implements HandlerInterceptor {
                     "Invalid access token"
             );
         }
+    }
+
+    private static boolean isLogoutRequest(HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        if (uri == null) {
+            return false;
+        }
+        String contextPath = request.getContextPath();
+        if (StringUtils.hasText(contextPath) && uri.startsWith(contextPath)) {
+            uri = uri.substring(contextPath.length());
+        }
+        return LOGOUT_PATH.equals(uri);
     }
 }

@@ -6,6 +6,7 @@ import com.example.printer_springbe.auth.dto.request.SendOtpRequest;
 import com.example.printer_springbe.auth.dto.request.SignUpRequest;
 import com.example.printer_springbe.auth.dto.request.VerifyOtpRequest;
 import com.example.printer_springbe.auth.service.LoginService;
+import com.example.printer_springbe.auth.service.LogoutService;
 import com.example.printer_springbe.auth.service.RegistrationService;
 import com.example.printer_springbe.common.response.ApiResponse;
 import com.example.printer_springbe.common.response.ApiResponses;
@@ -23,10 +24,15 @@ public class AuthController {
 
     private final RegistrationService registrationService;
     private final LoginService loginService;
+    private final LogoutService logoutService;
 
-    public AuthController(RegistrationService registrationService, LoginService loginService) {
+    public AuthController(
+            RegistrationService registrationService,
+            LoginService loginService,
+            LogoutService logoutService) {
         this.registrationService = registrationService;
         this.loginService = loginService;
+        this.logoutService = logoutService;
     }
 
     @PostMapping("/send-otp")
@@ -49,5 +55,11 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<ApiResponse> login(@Valid @RequestBody LoginRequest request) {
         return ApiResponses.okEntity("Login", loginService.login(request));
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<ApiResponse> logout(
+            @RequestHeader(value = AuthConstants.AUTHORIZATION_HEADER, required = false) String authorization) {
+        return ApiResponses.okEntity("Logout", logoutService.logout(authorization));
     }
 }

@@ -13,6 +13,7 @@ import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Date;
+import java.util.UUID;
 
 @Service
 public class JwtTokenService {
@@ -37,6 +38,7 @@ public class JwtTokenService {
         Instant now = Instant.now();
         Instant expiry = now.plusSeconds(accessTokenTtlSeconds);
         return Jwts.builder()
+                .id(UUID.randomUUID().toString())
                 .subject(email)
                 .claim("uid", userId)
                 .issuedAt(Date.from(now))
@@ -59,10 +61,13 @@ public class JwtTokenService {
 
             Long userId = claims.get("uid", Long.class);
             String email = claims.getSubject();
-            if (userId == null || email == null || email.isBlank()) {
+            String jti = claims.getId();
+            Date expiration = claims.getExpiration();
+            if (userId == null || email == null || email.isBlank()
+                    || jti == null || jti.isBlank() || expiration == null) {
                 throw new JwtException("Invalid token claims");
             }
-            return new AuthenticatedUser(userId, email);
+            return new AuthenticatedUser(userId, email, jti, expiration.toInstant());
         } catch (ExpiredJwtException ex) {
             throw ex;
         } catch (JwtException ex) {
